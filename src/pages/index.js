@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase'; // adjust number of ../ based on folder depth
+
 
 const K = 30;
 
