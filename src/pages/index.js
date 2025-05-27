@@ -1,213 +1,201 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
-const players75 = [
-  "Michael Jordan",
-  "LeBron James",
-  "Kareem Abdul-Jabbar",
-  "Bill Russell",
-  "Magic Johnson",
-  "Larry Bird",
-  "Wilt Chamberlain",
-  "Tim Duncan",
-  "Kobe Bryant",
-  "Shaquille O'Neal",
-  "Kevin Durant",
-  "Stephen Curry",
-  "Oscar Robertson",
-  "Hakeem Olajuwon",
-  "Jerry West",
-  "Moses Malone",
-  "Charles Barkley",
-  "Karl Malone",
-  "Dirk Nowitzki",
-  "John Stockton",
-  "Kevin Garnett",
-  "Dwyane Wade",
-  "Allen Iverson",
-  "Scottie Pippen",
-  "Isiah Thomas",
-  "Steve Nash",
-  "Patrick Ewing",
-  "Ray Allen",
-  "Jason Kidd",
-  "Reggie Miller",
-  "Chris Paul",
-  "Giannis Antetokounmpo",
-  "James Harden",
-  "Anthony Davis",
-  "Paul Pierce",
-  "Carmelo Anthony",
-  "Russell Westbrook",
-  "Damian Lillard",
-  "Kawhi Leonard",
-  "Joel Embiid",
-  "Nikola Jokic",
-  "Bradley Beal",
-  "Zion Williamson",
-  "Julius Erving",
-  "Bob Cousy",
-  "Dennis Rodman",
-  "George Gervin",
-  "Walt Frazier",
-  "Alonzo Mourning",
-  "Dikembe Mutombo",
-  "David Robinson",
-  "Yao Ming",
-  "Dwight Howard",
-  "Tracy McGrady",
-  "Paul George",
-  "Klay Thompson",
-  "Draymond Green",
-  "DeMar DeRozan",
-  "Kyle Lowry",
-  "John Wall",
-  "Rajon Rondo",
-  "Chris Bosh",
-  "Marc Gasol",
-  "Blake Griffin",
-  "Victor Oladipo",
-  "Jamal Murray",
-  "Ben Simmons",
-  "De'Aaron Fox",
-  "Donovan Mitchell",
-  "Zach LaVine",
-  "Jayson Tatum",
-  "Jaylen Brown",
-  "Fred VanVleet",
-  "Mikal Bridges",
-  "Shai Gilgeous-Alexander",
-  "Dejounte Murray",
-  "LaMelo Ball",
-  "Tyrese Haliburton",
-  "Anthony Edwards"
-];
-
-const STORAGE_KEY = 'nbaPlayerEloRankings';
 const K = 30;
 
 export default function Home() {
-  // Load players from localStorage or initialize
-  const loadPlayers = () => {
-    if (typeof window === 'undefined') return players75.map(name => ({ name, elo: 1500 }));
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return players75.map(name => ({ name, elo: 1500 }));
-      }
-    } else {
-      return players75.map(name => ({ name, elo: 1500 }));
-    }
-  };
-
-  const [players, setPlayers] = useState(loadPlayers);
+  const [players, setPlayers] = useState([]);
   const [currentPair, setCurrentPair] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Save players to localStorage
-  const savePlayers = (playersToSave) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(playersToSave));
-  };
-
-  // Elo calculations
+  // Elo rating calculation helpers
   const expectedScore = (ra, rb) => 1 / (1 + Math.pow(10, (rb - ra) / 400));
+
   const updateElo = (winner, loser) => {
-    let expectedWinner = expectedScore(winner.elo, loser.elo);
-    let expectedLoser = expectedScore(loser.elo, winner.elo);
-    winner.elo = winner.elo + K * (1 - expectedWinner);
-    loser.elo = loser.elo + K * (0 - expectedLoser);
+    const expectedWinner = expectedScore(winner.elo, loser.elo);
+    const expectedLoser = expectedScore(loser.elo, winner.elo);
+
+    // New ELO calculations, rounded to integer
+    winner.elo = Math.round(winner.elo + K * (1 - expectedWinner));
+    loser.elo = Math.round(loser.elo + K * (0 - expectedLoser));
   };
 
-  // Pick two different players randomly
-  const getRandomPair = () => {
-    let i = Math.floor(Math.random() * players.length);
+  // Fetch all players from Supabase database
+  async function fetchPlayers() {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const { data, error } = await supabase
+        .from('players')
+        .select('*');
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setErrorMsg('No players found in database.');
+        setPlayers([]);
+        setCurrentPair([]);
+      } else {
+        setPlayers(data);
+        setCurrentPair(getRandomPair(data));
+      }
+    } catch (error) {
+      setErrorMsg(`Failed to fetch players: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Utility: pick two different random players from an array
+  function getRandomPair(playerList) {
+    if (playerList.length < 2) return [];
+    let i = Math.floor(Math.random() * playerList.length);
     let j;
     do {
-      j = Math.floor(Math.random() * players.length);
+      j = Math.floor(Math.random() * playerList.length);
     } while (j === i);
-    return [players[i], players[j]];
-  };
+    return [playerList[i], playerList[j]];
+  }
 
-  // Update current pair for voting
-  const showNewPair = () => {
-    setCurrentPair(getRandomPair());
-  };
+  // Handle user vote for the winner (0 or 1 index)
+  async function vote(winnerIndex) {
+    if (currentPair.length !== 2) return;
 
-  // On first load, show a pair
-  useEffect(() => {
-    showNewPair();
-  }, []);
+    const winner = { ...currentPair[winnerIndex] };
+    const loser = { ...currentPair[1 - winnerIndex] };
 
-  // Handle button click for winner
-  const vote = (winnerIndex) => {
-    let updatedPlayers = [...players];
-    const winner = currentPair[winnerIndex];
-    const loser = currentPair[1 - winnerIndex];
-
-    // Update ELO
+    // Update ELO ratings locally
     updateElo(winner, loser);
 
-    // Replace updated players in array
-    updatedPlayers = updatedPlayers.map(p =>
-      p.name === winner.name ? winner : p.name === loser.name ? loser : p
-    );
+    // Update local players state
+    const updatedPlayers = players.map(p => {
+      if (p.id === winner.id) return winner;
+      if (p.id === loser.id) return loser;
+      return p;
+    });
 
-    // Save and update state
-    savePlayers(updatedPlayers);
-    setPlayers(updatedPlayers);
+    // Save updated ELO ratings to Supabase
+    try {
+      const { error } = await supabase
+        .from('players')
+        .upsert([winner, loser], { onConflict: 'id' });
 
-    // Show new pair
-    showNewPair();
-  };
+      if (error) throw error;
 
-  // Sort players by Elo descending
+      setPlayers(updatedPlayers);
+      setCurrentPair(getRandomPair(updatedPlayers));
+    } catch (error) {
+      setErrorMsg(`Failed to update player ratings: ${error.message}`);
+    }
+  }
+
+  // Fetch players on component mount
+  useEffect(() => {
+    fetchPlayers();
+  }, []);
+
+  // Sorted players by Elo descending
   const sortedPlayers = [...players].sort((a, b) => b.elo - a.elo);
 
   return (
-    <div style={{ maxWidth: 600, margin: '40px auto', padding: '0 20px', fontFamily: 'Arial, sans-serif', textAlign: 'center', backgroundColor: '#f9f9f9', color: '#222' }}>
-      <h2>Who is better?</h2>
-      {currentPair.length === 2 && (
+    <main
+      style={{
+        maxWidth: 600,
+        margin: '40px auto',
+        padding: '0 20px',
+        fontFamily: 'Arial, sans-serif',
+        textAlign: 'center',
+        backgroundColor: '#f9f9f9',
+        color: '#222',
+        minHeight: '100vh',
+      }}
+    >
+      <h1>NBA Player Elo Ranking</h1>
+
+      {loading && <p>Loading players...</p>}
+      {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+
+      {!loading && !errorMsg && currentPair.length === 2 && (
         <>
-          <button onClick={() => vote(0)} style={buttonStyle}>{currentPair[0].name}</button>
-          <span style={{ margin: '0 10px' }}>vs</span>
-          <button onClick={() => vote(1)} style={buttonStyle}>{currentPair[1].name}</button>
+          <h2>Who is better?</h2>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 20, marginBottom: 30 }}>
+            <button
+              onClick={() => vote(0)}
+              style={buttonStyle}
+              aria-label={`Vote for ${currentPair[0].name}`}
+            >
+              {currentPair[0].name}
+              <br />
+              <small>Elo: {currentPair[0].elo}</small>
+            </button>
+            <span style={{ alignSelf: 'center', fontSize: '1.5rem' }}>vs</span>
+            <button
+              onClick={() => vote(1)}
+              style={buttonStyle}
+              aria-label={`Vote for ${currentPair[1].name}`}
+            >
+              {currentPair[1].name}
+              <br />
+              <small>Elo: {currentPair[1].elo}</small>
+            </button>
+          </div>
         </>
       )}
-      <h2>Rankings</h2>
-      <table style={{ margin: '25px auto 0', borderCollapse: 'collapse', width: '100%', maxWidth: 600, backgroundColor: 'white', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}>
-        <thead style={{ backgroundColor: '#007BFF', color: 'white' }}>
-          <tr><th style={thTdStyle}>Rank</th><th style={thTdStyle}>Player</th><th style={thTdStyle}>Elo</th></tr>
-        </thead>
-        <tbody>
-          {sortedPlayers.map((p, idx) => (
-            <tr key={p.name} style={idx % 2 === 0 ? { backgroundColor: '#f9f9f9' } : {}}>
-              <td style={thTdStyle}>{idx + 1}</td>
-              <td style={thTdStyle}>{p.name}</td>
-              <td style={thTdStyle}>{p.elo.toFixed(0)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+
+      {!loading && !errorMsg && (
+        <>
+          <h2>Player Rankings</h2>
+          <table
+            style={{
+              margin: '25px auto 0',
+              borderCollapse: 'collapse',
+              width: '100%',
+              maxWidth: 600,
+              backgroundColor: 'white',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+            }}
+          >
+            <thead style={{ backgroundColor: '#007BFF', color: 'white' }}>
+              <tr>
+                <th style={thTdStyle}>Rank</th>
+                <th style={thTdStyle}>Player</th>
+                <th style={thTdStyle}>Elo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedPlayers.map((player, idx) => (
+                <tr
+                  key={player.id}
+                  style={idx % 2 === 0 ? { backgroundColor: '#f9f9f9' } : {}}
+                >
+                  <td style={thTdStyle}>{idx + 1}</td>
+                  <td style={thTdStyle}>{player.name}</td>
+                  <td style={thTdStyle}>{player.elo}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </main>
   );
 }
 
 const buttonStyle = {
   fontSize: '1.2rem',
   padding: '12px 24px',
-  margin: '10px 15px',
   cursor: 'pointer',
   border: '2px solid #007BFF',
   borderRadius: 6,
   backgroundColor: 'white',
   color: '#007BFF',
+  minWidth: 180,
   transition: 'background-color 0.3s, color 0.3s',
-  minWidth: 180
 };
 
 const thTdStyle = {
   padding: '10px 15px',
   borderBottom: '1px solid #ddd',
   textAlign: 'left',
-  fontSize: '1rem'
+  fontSize: '1rem',
 };
