@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase'; // adjust number of ../ based on folder depth
-
+import { supabase } from '../../lib/supabase';
 
 const K = 30;
 
@@ -8,35 +7,23 @@ export default function Home() {
   const [players, setPlayers] = useState([]);
   const [currentPair, setCurrentPair] = useState([]);
 
-  // Fetch players from Supabase
   const fetchPlayers = async () => {
-    const { data, error } = await supabase
-      .from('players')
-      .select('*');
-    if (error) {
-      console.error('Error fetching players:', error);
-    } else {
-      setPlayers(data);
-    }
+    const { data, error } = await supabase.from('players').select('*');
+    if (error) console.error('Error fetching players:', error);
+    else setPlayers(data);
   };
 
-  // Elo calculations
   const expectedScore = (ra, rb) => 1 / (1 + Math.pow(10, (rb - ra) / 400));
 
   const updateElo = (winner, loser) => {
     const expectedWinner = expectedScore(winner.elo, loser.elo);
     const expectedLoser = expectedScore(loser.elo, winner.elo);
-
-    const winnerNewElo = winner.elo + K * (1 - expectedWinner);
-    const loserNewElo = loser.elo + K * (0 - expectedLoser);
-
     return {
-      winnerNewElo: Math.round(winnerNewElo),
-      loserNewElo: Math.round(loserNewElo),
+      winnerNewElo: Math.round(winner.elo + K * (1 - expectedWinner)),
+      loserNewElo: Math.round(loser.elo + K * (0 - expectedLoser)),
     };
   };
 
-  // Pick two different players randomly
   const getRandomPair = () => {
     if (players.length < 2) return [];
     let i = Math.floor(Math.random() * players.length);
@@ -47,30 +34,24 @@ export default function Home() {
     return [players[i], players[j]];
   };
 
-  // Show a new pair
   const showNewPair = () => {
     setCurrentPair(getRandomPair());
   };
 
-  // On load fetch players and show a pair
   useEffect(() => {
     fetchPlayers();
   }, []);
 
   useEffect(() => {
-    if (players.length >= 2) {
-      showNewPair();
-    }
+    if (players.length >= 2) showNewPair();
   }, [players]);
 
-  // Handle voting and update Elo in Supabase
   const vote = async (winnerIndex) => {
     const winner = currentPair[winnerIndex];
     const loser = currentPair[1 - winnerIndex];
 
     const { winnerNewElo, loserNewElo } = updateElo(winner, loser);
 
-    // Update DB
     const { error: errorWinner } = await supabase
       .from('players')
       .update({ elo: winnerNewElo })
@@ -86,7 +67,6 @@ export default function Home() {
       return;
     }
 
-    // Update local state immediately for UI responsiveness
     setPlayers((prev) =>
       prev.map((p) => {
         if (p.id === winner.id) return { ...p, elo: winnerNewElo };
@@ -98,55 +78,53 @@ export default function Home() {
     showNewPair();
   };
 
-  // Sort by Elo descending
   const sortedPlayers = [...players].sort((a, b) => b.elo - a.elo);
 
   return (
-    <div style={{ maxWidth: 600, margin: '40px auto', padding: 20, fontFamily: 'Arial, sans-serif', textAlign: 'center', backgroundColor: '#f9f9f9', color: '#222' }}>
-      <h2>Who is better?</h2>
+    <main className="min-h-screen bg-gray-100 px-4 sm:px-6 py-8 text-center font-sans">
+      <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">Who is better?</h1>
+
       {currentPair.length === 2 && (
-        <>
-          <button onClick={() => vote(0)} style={buttonStyle}>{currentPair[0].name}</button>
-          <span style={{ margin: '0 10px' }}>vs</span>
-          <button onClick={() => vote(1)} style={buttonStyle}>{currentPair[1].name}</button>
-        </>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+          <button
+            onClick={() => vote(0)}
+            className="w-full sm:w-48 px-6 py-3 text-lg font-semibold border-2 border-blue-600 text-blue-600 bg-white rounded-xl hover:bg-blue-600 hover:text-white transition-all"
+          >
+            {currentPair[0].name}
+          </button>
+
+          <span className="text-gray-500 font-semibold">vs</span>
+
+          <button
+            onClick={() => vote(1)}
+            className="w-full sm:w-48 px-6 py-3 text-lg font-semibold border-2 border-blue-600 text-blue-600 bg-white rounded-xl hover:bg-blue-600 hover:text-white transition-all"
+          >
+            {currentPair[1].name}
+          </button>
+        </div>
       )}
 
-      <h2>Rankings</h2>
-      <table style={{ margin: '25px auto 0', borderCollapse: 'collapse', width: '100%', maxWidth: 600, backgroundColor: 'white', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}>
-        <thead style={{ backgroundColor: '#007BFF', color: 'white' }}>
-          <tr><th style={thTdStyle}>Rank</th><th style={thTdStyle}>Player</th><th style={thTdStyle}>Elo</th></tr>
-        </thead>
-        <tbody>
-          {sortedPlayers.map((p, idx) => (
-            <tr key={p.id} style={idx % 2 === 0 ? { backgroundColor: '#f9f9f9' } : {}}>
-              <td style={thTdStyle}>{idx + 1}</td>
-              <td style={thTdStyle}>{p.name}</td>
-              <td style={thTdStyle}>{p.elo}</td>
+      <h2 className="text-xl font-semibold text-gray-700 mb-4">Rankings</h2>
+      <div className="overflow-x-auto max-w-full sm:max-w-2xl mx-auto">
+        <table className="min-w-full bg-white shadow-md rounded-lg overflow-hidden">
+          <thead className="bg-blue-600 text-white text-sm sm:text-base">
+            <tr>
+              <th className="py-3 px-4 text-left">Rank</th>
+              <th className="py-3 px-4 text-left">Player</th>
+              <th className="py-3 px-4 text-left">Elo</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="text-sm sm:text-base text-gray-800">
+            {sortedPlayers.map((p, idx) => (
+              <tr key={p.id} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                <td className="py-3 px-4">{idx + 1}</td>
+                <td className="py-3 px-4">{p.name}</td>
+                <td className="py-3 px-4">{p.elo}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </main>
   );
 }
-
-const buttonStyle = {
-  fontSize: '1.2rem',
-  padding: '12px 24px',
-  margin: '10px 15px',
-  cursor: 'pointer',
-  border: '2px solid #007BFF',
-  borderRadius: 6,
-  backgroundColor: 'white',
-  color: '#007BFF',
-  transition: 'background-color 0.3s, color 0.3s',
-  minWidth: 180,
-};
-
-const thTdStyle = {
-  padding: '10px 15px',
-  borderBottom: '1px solid #ddd',
-  textAlign: 'left',
-  fontSize: '1rem',
-};
